@@ -29,8 +29,7 @@ public class HandleController {
      */
     @GetMapping("short/{shortUrl}")
     public Mono<Rendering> handle(ServerHttpRequest request) {
-        return Mono.just(request)
-                .flatMap(p -> urlService.getOriginalUrl(request))
+        return Mono.from(urlService.getOriginalUrl(request))
                 .map(originalUrl -> Rendering.redirectTo(originalUrl).build());
     }
 
