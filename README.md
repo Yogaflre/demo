@@ -1,4 +1,2 @@
-# utils
-utils-collection
-
-some utils and services
+# Demo
+some demos and utils
