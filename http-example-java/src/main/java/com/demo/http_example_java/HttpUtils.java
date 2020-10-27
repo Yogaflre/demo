@@ -15,6 +15,7 @@ import org.apache.http.util.EntityUtils;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * Created by yogafire on 2020/10/15
@@ -54,14 +55,11 @@ public class HttpUtils {
         if (url == null || url.isEmpty()) {
             throw new IllegalArgumentException("url is empty");
         }
-        StringBuilder sb = new StringBuilder(url);
         if (params != null && params.size() > 0) {
-            sb.append("?");
-            for (Map.Entry<String, String> entry : params.entrySet()) {
-                sb.append(entry.getKey()).append("=").append(entry.getValue()).append("&");
-            }
+            url += "?" + params.entrySet().stream()
+                    .map(entry -> entry.getKey() + "=" + entry.getValue()).collect(Collectors.joining("&"));
         }
-        HttpGet get = new HttpGet(sb.substring(0, sb.length() - 1));
+        HttpGet get = new HttpGet(url);
         fillHeader(get, headers);
         return get;
     }
