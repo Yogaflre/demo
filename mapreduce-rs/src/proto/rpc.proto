@@ -1,0 +1,39 @@
+syntax = "proto3";
+package rpc;
+
+import "google/protobuf/wrappers.proto";
+
+
+service TaskService {
+	rpc GetTask (TaskReq) returns (TaskRes);
+
+	rpc SyncTask (TaskSyncReq) returns (google.protobuf.BoolValue);
+}
+
+enum TaskType {
+	Map = 0;
+	Reduce = 1;
+}
+
+enum TaskStatus {
+	Start = 0;
+	Running = 1;
+	Finished = 2;
+}
+
+message TaskReq {
+	TaskType task_type = 1;
+}
+
+message TaskRes {
+	bool done = 1;
+	uint32 hash_code = 2;
+	repeated string files = 3;
+}
+
+message TaskSyncReq {
+	TaskType task_type = 1;
+	uint32 hash_code = 2;
+	repeated string input_files = 3;
+	repeated string out_files = 4;
+}
