@@ -1,8 +1,14 @@
 use std::{
+    cmp::Reverse,
+    collections::BinaryHeap,
     fs::{self, File, OpenOptions},
     io::{self, BufReader, BufWriter, ErrorKind, Read, Write},
+    mem::replace,
     panic,
     path::PathBuf,
+    sync::{Arc, RwLock},
+    thread,
+    time::Duration,
 };
 
 use rb_tree::RBMap;
@@ -11,25 +17,43 @@ use rb_tree::RBMap;
 pub struct Store {
     log: String,
     db: String,
+    db_index: usize, //0 level的文件个数(mem_table只会持久化到0 level)
+    db_level: usize, //db层级
     index: String,
-    db_index: usize,
 }
 impl Store {
-    pub fn init(path: &str) -> Self {
+    pub fn init(path: &str, db_level: usize) -> Self {
         let log = format!("{}/log", path);
         let db = format!("{}/db", path);
         let index = format!("{}/index", path);
         fs::create_dir_all(&log).unwrap();
         fs::create_dir_all(&db).unwrap();
+        for i in 0..db_level {
+            fs::create_dir_all(format!("{}/{}", db, i)).unwrap()
+        }
         fs::create_dir_all(&index).unwrap();
-        let dbs = fs::read_dir(&db).unwrap();
 
-        return Store {
+        let db_file_count = fs::read_dir(format!("{}/0", db)).unwrap().count();
+        let mut store = Store {
             log,
             db,
+            db_index: db_file_count,
+            db_level,
             index,
-            db_index: dbs.count(),
         };
+
+        //每次启动清理残留的save.log
+        store
+            .store(Arc::new(RwLock::new(store.get_immutable_mem_table())))
+            .unwrap();
+
+        //启动merge定时任务
+        let db_path = store.db.clone();
+        thread::spawn(move || loop {
+            Store::merge(&db_path, db_level).unwrap();
+            thread::sleep(Duration::from_secs(60));
+        });
+        return store;
     }
 
     pub fn replace_log(&self) {
@@ -50,55 +74,68 @@ impl Store {
         return Self::write_kv(&mut log_file, key, val);
     }
 
-    pub fn store(&mut self, immutable_table: RBMap<String, Option<String>>) -> io::Result<()> {
-        let mut db_file = BufWriter::new(
-            OpenOptions::new()
-                .create(true)
-                .write(true)
-                .truncate(true)
-                .open(format!("{}/{}.db", self.db, self.db_index))?,
-        );
-        for (k, v) in immutable_table.into_iter() {
-            Self::write_kv(&mut db_file, &k, v.as_ref())?;
+    pub fn store(
+        &mut self,
+        immutable_table: Arc<RwLock<RBMap<String, Option<String>>>>,
+    ) -> io::Result<()> {
+        if !immutable_table.read().unwrap().is_empty() {
+            let mut db_file = BufWriter::new(
+                OpenOptions::new()
+                    .create(true)
+                    .write(true)
+                    .truncate(true)
+                    .open(format!("{}/0/{}.db", self.db, self.db_index))?,
+            );
+            for (k, v) in immutable_table.read().unwrap().iter() {
+                Self::write_kv(&mut db_file, &k, v.as_ref())?;
+            }
+            self.db_index += 1;
+            replace(&mut immutable_table.write().ok(), None);
+            fs::remove_file(format!("{}/save.log", self.log))?;
         }
-        self.db_index += 1;
-        fs::remove_file(format!("{}/save.log", self.log))?;
         return Ok(());
     }
 
     pub fn search_by_key(&self, key: &String) -> Option<String> {
-        let mut paths = fs::read_dir(format!("{}/", self.db))
-            .unwrap()
-            .filter_map(|f| f.ok())
-            .map(|f| f.path())
-            .collect::<Vec<PathBuf>>();
-        paths.sort_by(|a, b| b.as_path().cmp(a.as_path()));
-        for path in paths {
-            let mut reader = BufReader::new(File::open(path).unwrap());
-            loop {
-                if let Some((k, v)) = Self::get_kv(&mut reader) {
-                    if *key == k {
-                        return v;
+        for i in (0..self.db_level).rev() {
+            let mut level_paths: Vec<PathBuf> = fs::read_dir(format!("{}/{}", self.db, i))
+                .unwrap()
+                .filter_map(Result::ok)
+                .map(|dir| dir.path())
+                .collect();
+            level_paths.sort_by(|a, b| b.as_path().cmp(a.as_path()));
+            for path in level_paths {
+                let mut reader = BufReader::new(File::open(path).unwrap());
+                loop {
+                    if let Some((k, v)) = Self::get_kv(&mut reader) {
+                        if *key == k {
+                            return v;
+                        }
+                    } else {
+                        break;
                     }
-                } else {
-                    break;
                 }
             }
         }
         return None;
     }
 
-    /*
-     * 从日志恢复缓存
-     */
     pub fn get_mem_table(&self) -> RBMap<String, Option<String>> {
+        return Self::get_table(format!("{}/cache.log", self.log));
+    }
+
+    pub fn get_immutable_mem_table(&self) -> RBMap<String, Option<String>> {
+        return Self::get_table(format!("{}/save.log", self.log));
+    }
+
+    fn get_table(path: String) -> RBMap<String, Option<String>> {
         let mut map: RBMap<String, Option<String>> = RBMap::new();
         let mut reader = BufReader::new(
             OpenOptions::new()
                 .create(true)
                 .write(true)
                 .read(true)
-                .open(format!("{}/cache.log", self.log))
+                .open(path)
                 .unwrap(),
         );
         loop {
@@ -112,7 +149,7 @@ impl Store {
     }
 
     pub fn write_kv(
-        file: &mut BufWriter<File>,
+        writer: &mut BufWriter<File>,
         key: &String,
         val: Option<&String>,
     ) -> io::Result<()> {
@@ -131,15 +168,15 @@ impl Store {
                     format!("value size invalid! value_bytes:{}", val_bytes.len()),
                 ));
             }
-            file.write_all(&(false as u8).to_le_bytes())?;
-            file.write_all(&(key_bytes.len() as u8).to_le_bytes())?;
-            file.write_all(&(val_bytes.len() as u8).to_le_bytes())?;
-            file.write_all(key_bytes)?;
-            file.write_all(val_bytes)?;
+            writer.write_all(&(false as u8).to_le_bytes())?;
+            writer.write_all(&(key_bytes.len() as u8).to_le_bytes())?;
+            writer.write_all(&(val_bytes.len() as u8).to_le_bytes())?;
+            writer.write_all(key_bytes)?;
+            writer.write_all(val_bytes)?;
         } else {
-            file.write_all(&(true as u8).to_le_bytes())?;
-            file.write_all(&(key_bytes.len() as u8).to_le_bytes())?;
-            file.write_all(key_bytes)?;
+            writer.write_all(&(true as u8).to_le_bytes())?;
+            writer.write_all(&(key_bytes.len() as u8).to_le_bytes())?;
+            writer.write_all(key_bytes)?;
         }
         return Ok(());
     }
@@ -181,5 +218,64 @@ impl Store {
                 _ => panic!("read log error: {}", error),
             },
         }
+    }
+
+    //归并每层达到阈值的文件个数
+    fn merge(db_path: &str, db_level: usize) -> io::Result<()> {
+        //FIXME 因为mem会不断的持久化到0层，所以在0层归并完有可能出现文件序号错乱的问题
+        for i in 0..(db_level - 1) {
+            let low_paths: Vec<PathBuf> = fs::read_dir(format!("{}/{}", db_path, i))?
+                .filter_map(Result::ok)
+                .map(|dir| dir.path())
+                .collect();
+            //大于阈值才归并
+            if low_paths.len() >= 3 {
+                let mut low_readers: Vec<BufReader<File>> = low_paths
+                    .iter()
+                    .filter_map(|path| OpenOptions::new().read(true).open(path).ok())
+                    .map(|file| BufReader::new(file))
+                    .collect();
+                let file_name = format!(
+                    "{}/{}/{}.unfinished",
+                    db_path,
+                    i + 1,
+                    fs::read_dir(format!("{}/{}", db_path, i + 1))?
+                        .filter_map(Result::ok)
+                        .filter(|dir| dir.path().ends_with(".db"))
+                        .count()
+                );
+                let mut high_writer = BufWriter::new(
+                    OpenOptions::new()
+                        .write(true)
+                        .create(true)
+                        .truncate(true)
+                        .open(&file_name)?,
+                );
+                let mut heap: BinaryHeap<(Reverse<String>, usize, Option<String>)> =
+                    BinaryHeap::new();
+                for (i, reader) in low_readers.iter_mut().enumerate() {
+                    if let Some((k, v)) = Self::get_kv(reader) {
+                        heap.push((Reverse(k), i, v));
+                    }
+                }
+                let mut pre: Option<(Reverse<String>, usize, Option<String>)> = None;
+                while !heap.is_empty() {
+                    let tmp = heap.pop().unwrap();
+                    if let Some((k, v)) = Self::get_kv(&mut low_readers[tmp.1]) {
+                        heap.push((Reverse(k), i, v));
+                    }
+                    if pre.is_none() || (pre.is_some() && pre.as_ref().unwrap().0 != tmp.0) {
+                        Self::write_kv(&mut high_writer, &((tmp.0).0), tmp.2.as_ref())?;
+                        pre = Some(tmp);
+                    }
+                }
+                fs::rename(&file_name, file_name.replace(".unfinished", ".db"))?;
+                //删除合并完的文件
+                for path in low_paths {
+                    fs::remove_file(path)?;
+                }
+            }
+        }
+        return Ok(());
     }
 }
