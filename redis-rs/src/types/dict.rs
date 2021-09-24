@@ -1,8 +1,6 @@
-use std::{collections::HashMap, time::Instant};
+use std::collections::HashMap;
 
-use rand::Rng;
-
-use crate::{structure::sds::Sds, types::strings::StringObject};
+use crate::encoding::sds::Sds;
 
 use super::object::Object;
 
@@ -14,19 +12,13 @@ enum RehashType {
     Shrink,
 }
 
-pub struct Dict<T>
-where
-    T: Object,
-{
+pub struct Dict {
     load_factor: f32,
-    maps: [HashMap<Sds, T>; 2],
+    maps: [HashMap<Sds, Box<dyn Object>>; 2],
     rehashing: i8, // rehashing进度
 }
 
-impl<T> Dict<T>
-where
-    T: Object,
-{
+impl Dict {
     pub fn new(load_factor: f32) -> Self {
         Self {
             load_factor,
@@ -35,7 +27,7 @@ where
         }
     }
 
-    pub fn dict_add(&mut self, key: Sds, val: T) -> Result<bool, String> {
+    pub fn dict_add(&mut self, key: Sds, val: Box<dyn Object>) -> Result<bool, String> {
         if self.is_rehashing() {
             self.rehash_step();
         } else if let Some(reahsh_type) = self.need_rehash() {
@@ -50,7 +42,7 @@ where
         return Ok(true);
     }
 
-    pub fn dict_replace(&mut self, key: Sds, val: T) -> Result<bool, String> {
+    pub fn dict_replace(&mut self, key: Sds, val: Box<dyn Object>) -> Result<bool, String> {
         if self.is_rehashing() {
             self.rehash_step();
         }
@@ -66,7 +58,7 @@ where
     /*
      * 因为渐进式rehash，所以需要使用可变引用
      */
-    pub fn dict_fetch_value(&mut self, key: &Sds) -> Result<Option<T>, String> {
+    pub fn dict_fetch_value(&mut self, key: &Sds) -> Result<Option<Box<dyn Object>>, String> {
         let is_rehashing = self.is_rehashing();
         if is_rehashing {
             self.rehash_step();
@@ -81,7 +73,7 @@ where
     }
 
     //TODO 随机获取一个key
-    pub fn dict_get_random_key(&mut self) -> Result<Option<(Sds, T)>, String> {
+    pub fn dict_get_random_key(&mut self) -> Result<Option<(Sds, Box<dyn Object>)>, String> {
         let is_rehashing = self.is_rehashing();
         if is_rehashing {
             self.rehash_step();
@@ -90,7 +82,7 @@ where
         return Ok(None);
     }
 
-    pub fn dict_delete(&mut self, key: &Sds) -> Result<Option<(Sds, T)>, String> {
+    pub fn dict_delete(&mut self, key: &Sds) -> Result<Option<(Sds, Box<dyn Object>)>, String> {
         let is_rehashing = self.is_rehashing();
         if is_rehashing {
             self.rehash_step();
@@ -167,15 +159,15 @@ where
         return Ok(());
     }
 
-    fn add_entry(&mut self, key: Sds, val: T) {
+    fn add_entry(&mut self, key: Sds, val: Box<dyn Object>) {
         self.maps[ACTIVE_INDEX].insert(key, val);
     }
 
-    fn get_value(&self, key: &Sds, index: usize) -> Option<T> {
+    fn get_value(&self, key: &Sds, index: usize) -> Option<Box<dyn Object>> {
         return self.maps[index].get(key).map(|o| o.clone());
     }
 
-    fn remove_entry(&mut self, key: &Sds, index: usize) -> Option<(Sds, T)> {
+    fn remove_entry(&mut self, key: &Sds, index: usize) -> Option<(Sds, Box<dyn Object>)> {
         return self.maps[index].remove_entry(key);
     }
 
@@ -187,7 +179,11 @@ where
 
 #[test]
 fn test_dict() {
-    let mut dict: Dict<dyn Object> = Dict::new(0.8);
+    use crate::types::strings::StringObject;
+    use rand::Rng;
+    use std::time::Instant;
+
+    let mut dict: Dict = Dict::new(0.8);
     let count: u32 = 5000;
 
     // add
@@ -195,7 +191,7 @@ fn test_dict() {
     for i in 0..count {
         dict.dict_add(
             Sds::new(&i.to_string().chars().collect::<Vec<char>>()),
-            Object::default(),
+            Box::new(StringObject::default()),
         )
         .unwrap();
     }

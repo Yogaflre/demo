@@ -1,5 +1,3 @@
-use crate::encoding::encoding::Encoding;
-
 #[derive(Clone)]
 pub enum RedisType {
     RedisString,
@@ -13,9 +11,8 @@ pub enum EncodingType {
     Dict,
 }
 
-pub trait Object<T>
-where
-    T: Encoding,
-{
-    fn create_object(value: &[char]) -> Box<dyn Object<T>>;
+pub trait Object {
+    fn create_object(value: &[char]) -> Box<Self>
+    where
+        Self: Sized;
 }

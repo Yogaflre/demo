@@ -2,16 +2,13 @@ use crate::encoding::{encoding::Encoding, sds::Sds};
 
 use super::object::{EncodingType, Object, RedisType};
 
-pub struct StringObject<T>
-where
-    T: Encoding,
-{
+pub struct StringObject {
     redis_type: RedisType,
     encoding_type: EncodingType,
-    val: Box<T>,
+    val: Box<dyn Encoding>,
 }
 
-impl Default for StringObject<i32> {
+impl Default for StringObject {
     fn default() -> Self {
         StringObject {
             redis_type: RedisType::RedisString,
@@ -21,12 +18,12 @@ impl Default for StringObject<i32> {
     }
 }
 
-impl Object<T> for StringObject<T> {
-    fn create_object(value: &[char]) -> Box<dyn Object<T>> {
-        StringObject {
+impl Object for StringObject {
+    fn create_object(value: &[char]) -> Box<Self> {
+        return Box::new(StringObject {
             redis_type: RedisType::RedisString,
-            encoding_type: EncodingType::Raw,
-            val: Box::new(0 as dyn Encoding),
-        }
+            encoding_type: EncodingType::Number,
+            val: Box::new(0_i32) as Box<dyn Encoding>,
+        });
     }
 }
