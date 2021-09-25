@@ -14,7 +14,7 @@ enum RehashType {
 
 pub struct Dict {
     load_factor: f32,
-    maps: [HashMap<Sds, Box<dyn Object>>; 2],
+    maps: [HashMap<Sds, Object>; 2],
     rehashing: i8, // rehashing进度
 }
 
@@ -27,7 +27,7 @@ impl Dict {
         }
     }
 
-    pub fn dict_add(&mut self, key: Sds, val: Box<dyn Object>) -> Result<bool, String> {
+    pub fn dict_add(&mut self, key: Sds, val: Object) -> Result<bool, String> {
         if self.is_rehashing() {
             self.rehash_step();
         } else if let Some(reahsh_type) = self.need_rehash() {
@@ -42,7 +42,7 @@ impl Dict {
         return Ok(true);
     }
 
-    pub fn dict_replace(&mut self, key: Sds, val: Box<dyn Object>) -> Result<bool, String> {
+    pub fn dict_replace(&mut self, key: Sds, val: Object) -> Result<bool, String> {
         if self.is_rehashing() {
             self.rehash_step();
         }
@@ -58,7 +58,7 @@ impl Dict {
     /*
      * 因为渐进式rehash，所以需要使用可变引用
      */
-    pub fn dict_fetch_value(&mut self, key: &Sds) -> Result<Option<Box<dyn Object>>, String> {
+    pub fn dict_fetch_value(&mut self, key: &Sds) -> Result<Option<Object>, String> {
         let is_rehashing = self.is_rehashing();
         if is_rehashing {
             self.rehash_step();
@@ -73,7 +73,7 @@ impl Dict {
     }
 
     //TODO 随机获取一个key
-    pub fn dict_get_random_key(&mut self) -> Result<Option<(Sds, Box<dyn Object>)>, String> {
+    pub fn dict_get_random_key(&mut self) -> Result<Option<(Sds, Object)>, String> {
         let is_rehashing = self.is_rehashing();
         if is_rehashing {
             self.rehash_step();
@@ -82,7 +82,7 @@ impl Dict {
         return Ok(None);
     }
 
-    pub fn dict_delete(&mut self, key: &Sds) -> Result<Option<(Sds, Box<dyn Object>)>, String> {
+    pub fn dict_delete(&mut self, key: &Sds) -> Result<Option<(Sds, Object)>, String> {
         let is_rehashing = self.is_rehashing();
         if is_rehashing {
             self.rehash_step();
@@ -159,15 +159,15 @@ impl Dict {
         return Ok(());
     }
 
-    fn add_entry(&mut self, key: Sds, val: Box<dyn Object>) {
+    fn add_entry(&mut self, key: Sds, val: Object) {
         self.maps[ACTIVE_INDEX].insert(key, val);
     }
 
-    fn get_value(&self, key: &Sds, index: usize) -> Option<Box<dyn Object>> {
+    fn get_value(&self, key: &Sds, index: usize) -> Option<Object> {
         return self.maps[index].get(key).map(|o| o.clone());
     }
 
-    fn remove_entry(&mut self, key: &Sds, index: usize) -> Option<(Sds, Box<dyn Object>)> {
+    fn remove_entry(&mut self, key: &Sds, index: usize) -> Option<(Sds, Object)> {
         return self.maps[index].remove_entry(key);
     }
 
@@ -179,7 +179,7 @@ impl Dict {
 
 #[test]
 fn test_dict() {
-    use crate::types::strings::StringObject;
+    use crate::types::object::ObjectValue;
     use rand::Rng;
     use std::time::Instant;
 
@@ -190,8 +190,8 @@ fn test_dict() {
     let time = Instant::now();
     for i in 0..count {
         dict.dict_add(
-            Sds::new(&i.to_string().chars().collect::<Vec<char>>()),
-            Box::new(StringObject::default()),
+            Sds::new(&i.to_le_bytes()),
+            Object::new(ObjectValue::Null, None).unwrap(),
         )
         .unwrap();
     }
@@ -207,7 +207,7 @@ fn test_dict() {
     // get
     let time = Instant::now();
     for i in 0..count {
-        let key = Sds::new(&i.to_string().chars().collect::<Vec<char>>());
+        let key = Sds::new(&i.to_le_bytes());
         assert!(dict.dict_fetch_value(&key).unwrap().is_some());
     }
     println!("get {} time: {:?}", count, time.elapsed());
@@ -216,12 +216,7 @@ fn test_dict() {
     let mut rng = rand::thread_rng();
     let time = Instant::now();
     for _ in 0..count {
-        let key = Sds::new(
-            &(rng.gen::<u32>() % count)
-                .to_string()
-                .chars()
-                .collect::<Vec<char>>(),
-        );
+        let key = Sds::new(&(rng.gen::<u32>() % count).to_le_bytes());
         assert!(dict.dict_fetch_value(&key).unwrap().is_some());
     }
     println!("random get {} time: {:?}", count, time.elapsed());
@@ -229,7 +224,7 @@ fn test_dict() {
     // missing get
     let time = Instant::now();
     for _ in 0..count {
-        let key = Sds::new(&['X']);
+        let key = Sds::new(&"X".as_bytes());
         assert!(dict.dict_fetch_value(&key).unwrap().is_none());
     }
     println!("missing get {} time: {:?}", count, time.elapsed());
@@ -237,7 +232,7 @@ fn test_dict() {
     // remove
     let time = Instant::now();
     for i in 0..count {
-        let key = Sds::new(&i.to_string().chars().collect::<Vec<char>>());
+        let key = Sds::new(&i.to_le_bytes());
         assert!(dict.dict_delete(&key).unwrap().is_some());
     }
     println!("remove {} time: {:?}", count, time.elapsed());
