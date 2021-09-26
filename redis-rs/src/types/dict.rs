@@ -1,8 +1,6 @@
 use std::collections::HashMap;
 
-use crate::encoding::sds::Sds;
-
-use super::object::Object;
+use crate::{common::error::Error, encoding::sds::Sds};
 
 const ACTIVE_INDEX: usize = 0;
 const PASSIVE_INDEX: usize = 1;
@@ -12,13 +10,19 @@ enum RehashType {
     Shrink,
 }
 
-pub struct Dict {
+pub struct Dict<V>
+where
+    V: Clone,
+{
     load_factor: f32,
-    maps: [HashMap<Sds, Object>; 2],
+    maps: [HashMap<Sds, V>; 2],
     rehashing: i8, // rehashing进度
 }
 
-impl Dict {
+impl<V> Dict<V>
+where
+    V: Clone,
+{
     pub fn new(load_factor: f32) -> Self {
         Self {
             load_factor,
@@ -27,7 +31,7 @@ impl Dict {
         }
     }
 
-    pub fn dict_add(&mut self, key: Sds, val: Object) -> Result<bool, String> {
+    pub fn dict_add(&mut self, key: Sds, val: V) -> Result<bool, Error> {
         if self.is_rehashing() {
             self.rehash_step();
         } else if let Some(reahsh_type) = self.need_rehash() {
@@ -42,7 +46,7 @@ impl Dict {
         return Ok(true);
     }
 
-    pub fn dict_replace(&mut self, key: Sds, val: Object) -> Result<bool, String> {
+    pub fn dict_replace(&mut self, key: Sds, val: V) -> Result<bool, Error> {
         if self.is_rehashing() {
             self.rehash_step();
         }
@@ -58,7 +62,7 @@ impl Dict {
     /*
      * 因为渐进式rehash，所以需要使用可变引用
      */
-    pub fn dict_fetch_value(&mut self, key: &Sds) -> Result<Option<Object>, String> {
+    pub fn dict_fetch_value(&mut self, key: &Sds) -> Result<Option<V>, Error> {
         let is_rehashing = self.is_rehashing();
         if is_rehashing {
             self.rehash_step();
@@ -72,8 +76,22 @@ impl Dict {
         return Ok(obj);
     }
 
+    pub fn dict_contanins_key(&mut self, key: &Sds) -> Result<bool, Error> {
+        let is_rehashing = self.is_rehashing();
+        if is_rehashing {
+            self.rehash_step();
+        }
+
+        let mut exists = self.maps[ACTIVE_INDEX].contains_key(key);
+        if !exists && is_rehashing {
+            exists = self.maps[PASSIVE_INDEX].contains_key(key);
+        }
+
+        return Ok(exists);
+    }
+
     //TODO 随机获取一个key
-    pub fn dict_get_random_key(&mut self) -> Result<Option<(Sds, Object)>, String> {
+    pub fn dict_get_random_key(&mut self) -> Result<Option<(Sds, V)>, Error> {
         let is_rehashing = self.is_rehashing();
         if is_rehashing {
             self.rehash_step();
@@ -82,7 +100,7 @@ impl Dict {
         return Ok(None);
     }
 
-    pub fn dict_delete(&mut self, key: &Sds) -> Result<Option<(Sds, Object)>, String> {
+    pub fn dict_delete(&mut self, key: &Sds) -> Result<Option<(Sds, V)>, Error> {
         let is_rehashing = self.is_rehashing();
         if is_rehashing {
             self.rehash_step();
@@ -106,7 +124,7 @@ impl Dict {
         return size;
     }
 
-    pub fn dict_release(&mut self) -> Result<bool, String> {
+    pub fn dict_release(&mut self) -> Result<bool, Error> {
         drop(self);
         return Ok(true);
     }
@@ -143,7 +161,7 @@ impl Dict {
         return None;
     }
 
-    fn resize_dict(&mut self, rehash_type: RehashType) -> Result<(), String> {
+    fn resize_dict(&mut self, rehash_type: RehashType) -> Result<(), Error> {
         match rehash_type {
             RehashType::Expand => {
                 self.maps[PASSIVE_INDEX] =
@@ -159,15 +177,15 @@ impl Dict {
         return Ok(());
     }
 
-    fn add_entry(&mut self, key: Sds, val: Object) {
+    fn add_entry(&mut self, key: Sds, val: V) {
         self.maps[ACTIVE_INDEX].insert(key, val);
     }
 
-    fn get_value(&self, key: &Sds, index: usize) -> Option<Object> {
-        return self.maps[index].get(key).map(|o| o.clone());
+    fn get_value(&self, key: &Sds, index: usize) -> Option<V> {
+        return self.maps[index].get(key).map(|v| v.clone());
     }
 
-    fn remove_entry(&mut self, key: &Sds, index: usize) -> Option<(Sds, Object)> {
+    fn remove_entry(&mut self, key: &Sds, index: usize) -> Option<(Sds, V)> {
         return self.maps[index].remove_entry(key);
     }
 
@@ -179,21 +197,17 @@ impl Dict {
 
 #[test]
 fn test_dict() {
-    use crate::types::object::ObjectValue;
     use rand::Rng;
     use std::time::Instant;
 
-    let mut dict: Dict = Dict::new(0.8);
+    let mut dict: Dict<Sds> = Dict::new(0.8);
     let count: u32 = 5000;
 
     // add
     let time = Instant::now();
     for i in 0..count {
-        dict.dict_add(
-            Sds::new(&i.to_le_bytes()),
-            Object::new(ObjectValue::Null, None).unwrap(),
-        )
-        .unwrap();
+        dict.dict_add(Sds::new(&i.to_le_bytes()), Sds::new(b"value"))
+            .unwrap();
     }
     println!("add {} time: {:?}", count, time.elapsed());
 
