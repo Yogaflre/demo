@@ -1,12 +1,12 @@
 use crate::{common::utils, encoding::sds::Sds};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum StringValue {
     Integer(i64),
     Raw(Sds),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StringObject {
     value: StringValue,
 }

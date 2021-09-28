@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use crate::{common::error::Error, encoding::sds::Sds};
 
@@ -15,7 +15,7 @@ where
     V: Clone,
 {
     load_factor: f32,
-    maps: [HashMap<Sds, V>; 2],
+    maps: [HashMap<Arc<Sds>, V>; 2],
     rehashing: i8, // rehashing进度
 }
 
@@ -31,14 +31,14 @@ where
         }
     }
 
-    pub fn dict_add(&mut self, key: Sds, val: V) -> Result<bool, Error> {
+    pub fn dict_add(&mut self, key: Arc<Sds>, val: V) -> Result<bool, Error> {
         if self.is_rehashing() {
             self.rehash_step();
         } else if let Some(reahsh_type) = self.need_rehash() {
             self.resize_dict(reahsh_type)?;
         }
 
-        if self.exist(&key) {
+        if self.exist(key.clone()) {
             return Ok(false);
         }
 
@@ -46,12 +46,12 @@ where
         return Ok(true);
     }
 
-    pub fn dict_replace(&mut self, key: Sds, val: V) -> Result<bool, Error> {
+    pub fn dict_replace(&mut self, key: Arc<Sds>, val: V) -> Result<bool, Error> {
         if self.is_rehashing() {
             self.rehash_step();
         }
 
-        if self.exist(&key) {
+        if self.exist(key.clone()) {
             return Ok(false);
         }
 
@@ -62,13 +62,13 @@ where
     /*
      * 因为渐进式rehash，所以需要使用可变引用
      */
-    pub fn dict_fetch_value(&mut self, key: &Sds) -> Result<Option<V>, Error> {
+    pub fn dict_get(&mut self, key: Arc<Sds>) -> Result<Option<V>, Error> {
         let is_rehashing = self.is_rehashing();
         if is_rehashing {
             self.rehash_step();
         }
 
-        let mut obj = self.get_value(key, ACTIVE_INDEX);
+        let mut obj = self.get_value(key.clone(), ACTIVE_INDEX);
         if obj.is_none() && is_rehashing {
             obj = self.get_value(key, PASSIVE_INDEX);
         }
@@ -100,7 +100,7 @@ where
         return Ok(None);
     }
 
-    pub fn dict_delete(&mut self, key: &Sds) -> Result<Option<(Sds, V)>, Error> {
+    pub fn dict_delete(&mut self, key: &Sds) -> Result<Option<(Arc<Sds>, V)>, Error> {
         let is_rehashing = self.is_rehashing();
         if is_rehashing {
             self.rehash_step();
@@ -177,20 +177,20 @@ where
         return Ok(());
     }
 
-    fn add_entry(&mut self, key: Sds, val: V) {
+    fn add_entry(&mut self, key: Arc<Sds>, val: V) {
         self.maps[ACTIVE_INDEX].insert(key, val);
     }
 
-    fn get_value(&self, key: &Sds, index: usize) -> Option<V> {
-        return self.maps[index].get(key).map(|v| v.clone());
+    fn get_value(&self, key: Arc<Sds>, index: usize) -> Option<V> {
+        return self.maps[index].get(&key).map(|v| v.clone());
     }
 
-    fn remove_entry(&mut self, key: &Sds, index: usize) -> Option<(Sds, V)> {
+    fn remove_entry(&mut self, key: &Sds, index: usize) -> Option<(Arc<Sds>, V)> {
         return self.maps[index].remove_entry(key);
     }
 
-    fn exist(&self, key: &Sds) -> bool {
-        return self.maps[ACTIVE_INDEX].contains_key(key)
+    fn exist(&self, key: Arc<Sds>) -> bool {
+        return self.maps[ACTIVE_INDEX].contains_key(&key)
             || (self.is_rehashing() && self.maps[PASSIVE_INDEX].contains_key(&key));
     }
 }
@@ -206,7 +206,7 @@ fn test_dict() {
     // add
     let time = Instant::now();
     for i in 0..count {
-        dict.dict_add(Sds::new(&i.to_le_bytes()), Sds::new(b"value"))
+        dict.dict_add(Arc::new(Sds::new(&i.to_le_bytes())), Sds::new(b"value"))
             .unwrap();
     }
     println!("add {} time: {:?}", count, time.elapsed());
@@ -221,8 +221,8 @@ fn test_dict() {
     // get
     let time = Instant::now();
     for i in 0..count {
-        let key = Sds::new(&i.to_le_bytes());
-        assert!(dict.dict_fetch_value(&key).unwrap().is_some());
+        let key = Arc::new(Sds::new(&i.to_le_bytes()));
+        assert!(dict.dict_get(key).unwrap().is_some());
     }
     println!("get {} time: {:?}", count, time.elapsed());
 
@@ -230,16 +230,16 @@ fn test_dict() {
     let mut rng = rand::thread_rng();
     let time = Instant::now();
     for _ in 0..count {
-        let key = Sds::new(&(rng.gen::<u32>() % count).to_le_bytes());
-        assert!(dict.dict_fetch_value(&key).unwrap().is_some());
+        let key = Arc::new(Sds::new(&(rng.gen::<u32>() % count).to_le_bytes()));
+        assert!(dict.dict_get(key).unwrap().is_some());
     }
     println!("random get {} time: {:?}", count, time.elapsed());
 
     // missing get
     let time = Instant::now();
     for _ in 0..count {
-        let key = Sds::new(&"X".as_bytes());
-        assert!(dict.dict_fetch_value(&key).unwrap().is_none());
+        let key = Arc::new(Sds::new(&"X".as_bytes()));
+        assert!(dict.dict_get(key).unwrap().is_none());
     }
     println!("missing get {} time: {:?}", count, time.elapsed());
 

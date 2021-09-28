@@ -1,36 +1,30 @@
+use std::sync::Arc;
+
 use chrono::{DateTime, Local};
 
-use crate::common::{
-    error::{Error, ErrorKind},
-    utils,
-};
+use crate::common::{error::Error, utils};
 
 use super::strings::StringObject;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ObjectValue {
     Null,
-    Strings(StringObject),
+    Strings(Arc<StringObject>),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Object {
     value: ObjectValue,
     active_time: DateTime<Local>,
-    expire_time: Option<DateTime<Local>>,
 }
 
 impl Object {
     // object method
-    pub fn new(value: ObjectValue, expire_time: Option<&str>) -> Result<Self, Error> {
-        let mut obj = Self {
+    pub fn new(value: ObjectValue) -> Result<Self, Error> {
+        let obj = Self {
             value,
             active_time: Local::now(),
-            expire_time: None,
         };
-        if let Some(time) = expire_time {
-            obj.set_expire_time(time)?;
-        }
         return Ok(obj);
     }
 
@@ -52,25 +46,6 @@ impl Object {
         return utils::elasped(self.active_time).num_milliseconds() as u64;
     }
 
-    pub fn set_expire_time(&mut self, time: &str) -> Result<(), Error> {
-        let expire_time = utils::parse_millis(time)?;
-        if expire_time < Local::now() {
-            return Err(Error::new(
-                ErrorKind::Invalid,
-                "expire time must greater than current time.",
-            ));
-        }
-        self.expire_time = Some(expire_time);
-        return Ok(());
-    }
-
-    pub fn is_expired(&self) -> bool {
-        if let Some(expire_time) = self.expire_time {
-            return Local::now() > expire_time;
-        }
-        return false;
-    }
-
     fn refresh_active_time(&mut self) {
         self.active_time = Local::now();
     }
@@ -87,19 +62,8 @@ impl Object {
 
 #[test]
 fn test_object() {
-    use chrono::Duration;
-    use std::thread;
     // base
-    let mut obj = Object::new(ObjectValue::Null, None).unwrap();
-    let sec = 2;
-    let expire_time = Local::now()
-        .checked_add_signed(Duration::seconds(sec))
-        .unwrap();
-    assert!(obj
-        .set_expire_time(&expire_time.timestamp_millis().to_string())
-        .is_ok());
+    let mut obj = Object::new(ObjectValue::Null).unwrap();
     assert_eq!(obj.get_type(), "Null");
     assert_eq!(obj.get_encoding(), "Null");
-    thread::sleep(std::time::Duration::from_secs(sec as u64));
-    assert!(obj.is_expired());
 }
