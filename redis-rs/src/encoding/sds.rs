@@ -24,6 +24,12 @@ impl Hash for Sds {
     }
 }
 
+impl Into<Sds> for &str {
+    fn into(self) -> Sds {
+        return Sds::get_key(self);
+    }
+}
+
 impl ToString for Sds {
     fn to_string(&self) -> String {
         return std::str::from_utf8(&self.buf[..self.used])
@@ -40,6 +46,13 @@ impl Sds {
             free: 0,
             buf: value.into(),
         }
+    }
+
+    fn get_key<T>(key: T) -> Sds
+    where
+        T: AsRef<[u8]> + AsRef<str>,
+    {
+        return Sds::new(key.as_ref());
     }
 
     pub fn as_bytes(&self) -> &[u8] {

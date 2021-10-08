@@ -7,6 +7,7 @@ use crate::{common::utils, types::strings::StringObject};
 
 pub const SHARED_NUMBER: i64 = 1000;
 
+#[derive(Debug)]
 pub struct SharedObject {
     integers: [Arc<StringObject>; SHARED_NUMBER as usize],
 }

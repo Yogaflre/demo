@@ -10,6 +10,7 @@ enum RehashType {
     Shrink,
 }
 
+#[derive(Debug)]
 pub struct Dict<V>
 where
     V: Clone,
@@ -76,15 +77,15 @@ where
         return Ok(obj);
     }
 
-    pub fn dict_contanins_key(&mut self, key: &Sds) -> Result<bool, Error> {
+    pub fn dict_contanins_key(&mut self, key: Arc<Sds>) -> Result<bool, Error> {
         let is_rehashing = self.is_rehashing();
         if is_rehashing {
             self.rehash_step();
         }
 
-        let mut exists = self.maps[ACTIVE_INDEX].contains_key(key);
+        let mut exists = self.maps[ACTIVE_INDEX].contains_key(&key);
         if !exists && is_rehashing {
-            exists = self.maps[PASSIVE_INDEX].contains_key(key);
+            exists = self.maps[PASSIVE_INDEX].contains_key(&key);
         }
 
         return Ok(exists);
@@ -100,7 +101,7 @@ where
         return Ok(None);
     }
 
-    pub fn dict_delete(&mut self, key: &Sds) -> Result<Option<(Arc<Sds>, V)>, Error> {
+    pub fn dict_delete(&mut self, key: Arc<Sds>) -> Result<Option<(Arc<Sds>, V)>, Error> {
         let is_rehashing = self.is_rehashing();
         if is_rehashing {
             self.rehash_step();
@@ -108,7 +109,7 @@ where
             self.resize_dict(reahsh_type)?;
         }
 
-        let mut entry = self.remove_entry(key, ACTIVE_INDEX);
+        let mut entry = self.remove_entry(key.clone(), ACTIVE_INDEX);
         if entry.is_none() && is_rehashing {
             entry = self.remove_entry(key, PASSIVE_INDEX);
         }
@@ -185,8 +186,8 @@ where
         return self.maps[index].get(&key).map(|v| v.clone());
     }
 
-    fn remove_entry(&mut self, key: &Sds, index: usize) -> Option<(Arc<Sds>, V)> {
-        return self.maps[index].remove_entry(key);
+    fn remove_entry(&mut self, key: Arc<Sds>, index: usize) -> Option<(Arc<Sds>, V)> {
+        return self.maps[index].remove_entry(&key);
     }
 
     fn exist(&self, key: Arc<Sds>) -> bool {
@@ -246,8 +247,8 @@ fn test_dict() {
     // remove
     let time = Instant::now();
     for i in 0..count {
-        let key = Sds::new(&i.to_le_bytes());
-        assert!(dict.dict_delete(&key).unwrap().is_some());
+        let key = Arc::new(Sds::new(&i.to_le_bytes()));
+        assert!(dict.dict_delete(key).unwrap().is_some());
     }
     println!("remove {} time: {:?}", count, time.elapsed());
 

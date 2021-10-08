@@ -19,35 +19,45 @@ use super::shared::SharedObject;
 
 const THRESH_HOLD: f32 = 0.9;
 
+#[derive(Debug)]
 struct Db {
     id: u8,
     dict: Dict<Object>,
     expires: Dict<DateTime<Local>>,
     shared_object: SharedObject,
+    is_master: bool,
 }
 
 impl Db {
-    fn new(id: u8) -> Self {
+    fn new(id: u8, is_master: bool) -> Self {
         Self {
             id,
             dict: Dict::new(THRESH_HOLD),
             expires: Dict::new(THRESH_HOLD),
             shared_object: SharedObject::new(),
+            is_master,
         }
     }
 
-    pub fn exists<T>(&mut self, keys: &[T]) -> Result<Box<[bool]>, Error>
-    where
-        T: AsRef<[u8]>,
-    {
-        return Ok(keys
-            .iter()
-            .map(|k| Sds::new(k.as_ref()))
-            .map(|s| self.dict.dict_contanins_key(&s).unwrap())
-            .collect::<Box<[bool]>>());
+    pub fn exist(&mut self, key: &str) -> Result<bool, Error> {
+        return match self.check_exist(Arc::new(key.into())) {
+            Ok(true) => Ok(true),
+            _ => Ok(false),
+        };
     }
 
-    pub fn set_expire_time(&mut self, key: Arc<Sds>, time: &str) -> Result<(), Error> {
+    pub fn delete(&mut self, key: &str) -> Result<bool, Error> {
+        let k: Arc<Sds> = Arc::new(key.into());
+
+        self.dict.dict_delete(k.clone())?;
+        self.expires.dict_delete(k)?;
+        return Ok(true);
+    }
+
+    pub fn set_expire_time(&mut self, key: &str, time: &str) -> Result<(), Error> {
+        let k: Arc<Sds> = Arc::new(key.into());
+        self.check_exist(k.clone())?;
+
         let expire_time: DateTime<Local> = utils::parse_millis(time)?;
         if expire_time < Local::now() {
             return Err(Error::new(
@@ -55,21 +65,23 @@ impl Db {
                 "expire time must greater than current time.",
             ));
         }
-        self.expires.dict_add(key, expire_time);
+        self.expires.dict_add(k, expire_time)?;
         return Ok(());
     }
 
-    pub fn is_expired(&mut self, key: Arc<Sds>) -> Result<bool, Error> {
-        if let Some(expire_time) = self.expires.dict_get(key)? {
-            return Ok(Local::now() > expire_time);
-        }
-        return Ok(false);
+    pub fn is_expired(&mut self, key: &str) -> Result<bool, Error> {
+        return self.check_exist(Arc::new(key.into())).map(|e| !e);
     }
 
-    pub fn set<T>(&mut self, key: T, val: T) -> Result<bool, Error>
-    where
-        T: AsRef<[u8]> + AsRef<str>,
-    {
+    pub fn delete_expire(&mut self, key: &str) -> Result<bool, Error> {
+        let k: Arc<Sds> = Arc::new(key.into());
+        self.check_exist(k.clone())?;
+
+        self.expires.dict_delete(k)?;
+        return Ok(true);
+    }
+
+    pub fn set(&mut self, key: &str, val: &str) -> Result<bool, Error> {
         //TODO 条件
         let value = match self.shared_object.get(&val) {
             Some(o) => o,
@@ -80,12 +92,63 @@ impl Db {
             Object::new(ObjectValue::Strings(value))?,
         );
     }
+
+    pub fn get(&mut self, key: &str) -> Result<Option<Box<[u8]>>, Error> {
+        let k: Arc<Sds> = Arc::new(key.into());
+
+        return match self.check_exist(k.clone()) {
+            Ok(true) => Ok(self.dict.dict_get(k)?.and_then(|mut o| o.get())),
+            _ => Ok(None),
+        };
+    }
+
+    fn check_exist(&mut self, key: Arc<Sds>) -> Result<bool, Error> {
+        if !self.dict.dict_contanins_key(key.clone())? {
+            return Err(Error::new(
+                ErrorKind::Invalid,
+                &format!("key is not exist: {}", key.to_string()),
+            ));
+        }
+
+        let expired;
+        if let Some(expire_time) = self.expires.dict_get(key.clone())? {
+            expired = Local::now() > expire_time;
+        } else {
+            expired = false;
+        }
+
+        if !expired {
+            return Ok(true);
+        }
+
+        if self.is_master {
+            self.delete(&key.to_string())?;
+        }
+
+        return Ok(false);
+    }
 }
 
 #[test]
 fn test_db() {
-    let mut db = Db::new(0);
-    assert!(db.set("1", "1").is_ok());
+    use std::thread;
+    use std::time::Duration;
+
+    let mut db = Db::new(0, true);
+    let kv = "default";
+    assert!(db.set(kv, kv).is_ok());
     // base
-    assert_eq!(db.exists(&["1", "2"]).unwrap().as_ref(), [true, false]);
+    assert!(db.exist(kv).unwrap());
+    assert_eq!(db.get(kv).unwrap().unwrap().as_ref(), kv.as_bytes());
+    assert!(db.delete(kv).unwrap());
+    // expire
+    let expire_time = Local::now().timestamp_millis() + 1000;
+    assert!(db.set_expire_time(kv, &expire_time.to_string()).is_err());
+    assert!(db.set(kv, kv).is_ok());
+    assert!(db.set_expire_time(kv, &expire_time.to_string()).is_ok());
+    assert_eq!(db.get(kv).unwrap().unwrap().as_ref(), kv.as_bytes());
+    thread::sleep(Duration::from_secs(1));
+    assert!(db.is_expired(kv).unwrap());
+    assert!(!db.exist(kv).unwrap());
+    assert_eq!(db.get(kv).unwrap(), None);
 }
