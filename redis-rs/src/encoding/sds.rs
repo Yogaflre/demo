@@ -1,3 +1,5 @@
+use serde::Deserialize;
+use serde::Serialize;
 use std::hash::Hash;
 
 const MB_SIZE: usize = 1024;
@@ -5,7 +7,7 @@ const MB_SIZE: usize = 1024;
 /*
  * Simple Dynamic String
  */
-#[derive(Default, Debug, Eq, Clone)]
+#[derive(Default, Debug, Eq, Clone, Serialize, Deserialize)]
 pub struct Sds {
     used: usize,
     free: usize,

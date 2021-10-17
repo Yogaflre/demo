@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use chrono::{DateTime, Duration, Local, TimeZone};
+use chrono::{DateTime, Local, TimeZone};
 
 use super::error::{Error, ErrorKind};
 
@@ -20,11 +20,11 @@ where
         value
             .as_ref()
             .parse::<i64>()
-            .map_err(|e| Error::new(ErrorKind::Parser, &e.to_string()))?,
+            .map_err(|e| Error::new(ErrorKind::Parser, e.to_string()))?,
     );
     return Ok(time);
 }
 
-pub fn elasped(start: DateTime<Local>) -> Duration {
-    return Local::now() - start;
+pub fn elasped(start: i64) -> i64 {
+    return Local::now().timestamp_millis() - start;
 }

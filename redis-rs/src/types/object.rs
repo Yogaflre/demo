@@ -1,21 +1,22 @@
 use std::sync::Arc;
 
-use chrono::{DateTime, Local};
+use chrono::Local;
+use serde::{Deserialize, Serialize};
 
 use crate::common::{error::Error, utils};
 
 use super::strings::StringObject;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ObjectValue {
     Null,
     Strings(Arc<StringObject>),
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Object {
     value: ObjectValue,
-    active_time: DateTime<Local>,
+    active_time: i64,
 }
 
 impl Object {
@@ -23,7 +24,7 @@ impl Object {
     pub fn new(value: ObjectValue) -> Result<Self, Error> {
         let obj = Self {
             value,
-            active_time: Local::now(),
+            active_time: Local::now().timestamp_millis(),
         };
         return Ok(obj);
     }
@@ -42,12 +43,12 @@ impl Object {
         };
     }
 
-    pub fn idle_time(&self) -> u64 {
-        return utils::elasped(self.active_time).num_milliseconds() as u64;
+    pub fn idle_time(&self) -> i64 {
+        return utils::elasped(self.active_time);
     }
 
     fn refresh_active_time(&mut self) {
-        self.active_time = Local::now();
+        self.active_time = Local::now().timestamp_millis();
     }
 
     // string method

@@ -1,12 +1,9 @@
 use std::sync::Arc;
 
-use chrono::{DateTime, Local};
+use chrono::Local;
 
 use crate::{
-    common::{
-        error::{Error, ErrorKind},
-        utils,
-    },
+    common::error::{Error, ErrorKind},
     encoding::sds::Sds,
     types::{
         dict::Dict,
@@ -20,20 +17,25 @@ use super::shared::SharedObject;
 const THRESH_HOLD: f32 = 0.9;
 
 #[derive(Debug)]
-struct Db {
+pub struct Db {
     id: u8,
-    dict: Dict<Object>,
-    expires: Dict<DateTime<Local>>,
+    pub dict: Dict<Object>,
+    pub expires: Dict<i64>,
     shared_object: SharedObject,
     is_master: bool,
 }
 
 impl Db {
-    fn new(id: u8, is_master: bool) -> Self {
+    pub fn new(
+        id: u8,
+        is_master: bool,
+        dict: Option<Dict<Object>>,
+        expires: Option<Dict<i64>>,
+    ) -> Self {
         Self {
             id,
-            dict: Dict::new(THRESH_HOLD),
-            expires: Dict::new(THRESH_HOLD),
+            dict: dict.unwrap_or(Dict::new(THRESH_HOLD)),
+            expires: expires.unwrap_or(Dict::new(THRESH_HOLD)),
             shared_object: SharedObject::new(),
             is_master,
         }
@@ -58,11 +60,13 @@ impl Db {
         let k: Arc<Sds> = Arc::new(key.into());
         self.check_exist(k.clone())?;
 
-        let expire_time: DateTime<Local> = utils::parse_millis(time)?;
-        if expire_time < Local::now() {
+        let expire_time: i64 = time
+            .parse::<i64>()
+            .map_err(|e| Error::new(ErrorKind::Parser, e.to_string()))?;
+        if expire_time < Local::now().timestamp_millis() {
             return Err(Error::new(
                 ErrorKind::Invalid,
-                "expire time must greater than current time.",
+                "expire time must greater than current time.".to_string(),
             ));
         }
         self.expires.dict_add(k, expire_time)?;
@@ -106,13 +110,13 @@ impl Db {
         if !self.dict.dict_contanins_key(key.clone())? {
             return Err(Error::new(
                 ErrorKind::Invalid,
-                &format!("key is not exist: {}", key.to_string()),
+                format!("key is not exist: {}", key.to_string()),
             ));
         }
 
         let expired;
         if let Some(expire_time) = self.expires.dict_get(key.clone())? {
-            expired = Local::now() > expire_time;
+            expired = Local::now().timestamp_millis() > expire_time;
         } else {
             expired = false;
         }
@@ -134,7 +138,7 @@ fn test_db() {
     use std::thread;
     use std::time::Duration;
 
-    let mut db = Db::new(0, true);
+    let mut db = Db::new(0, true, None, None);
     let kv = "default";
     assert!(db.set(kv, kv).is_ok());
     // base

@@ -1,4 +1,5 @@
 /target
+/store
 
 **/*.rs.bk
 Cargo.lock

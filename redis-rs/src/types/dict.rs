@@ -1,6 +1,6 @@
-use std::{collections::HashMap, sync::Arc};
-
 use crate::{common::error::Error, encoding::sds::Sds};
+use serde::{Deserialize, Serialize};
+use std::{collections::HashMap, sync::Arc};
 
 const ACTIVE_INDEX: usize = 0;
 const PASSIVE_INDEX: usize = 1;
@@ -10,7 +10,7 @@ enum RehashType {
     Shrink,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Dict<V>
 where
     V: Clone,
