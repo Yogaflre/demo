@@ -10,7 +10,7 @@ enum RehashType {
     Shrink,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Dict<V>
 where
     V: Clone,

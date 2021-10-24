@@ -7,17 +7,19 @@ use crate::{common::utils, types::strings::StringObject};
 
 pub const SHARED_NUMBER: i64 = 1000;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SharedObject {
     integers: [Arc<StringObject>; SHARED_NUMBER as usize],
 }
 
-impl SharedObject {
-    pub fn new() -> Self {
+impl Default for SharedObject {
+    fn default() -> Self {
         let integers = Self::init_integers();
         return Self { integers };
     }
+}
 
+impl SharedObject {
     pub fn get<T>(&self, val: T) -> Option<Arc<StringObject>>
     where
         T: AsRef<str>,
@@ -51,7 +53,7 @@ impl SharedObject {
 
 #[test]
 fn test_shared() {
-    let obj = SharedObject::new();
+    let obj = SharedObject::default();
     assert_eq!(obj.integers.len(), SHARED_NUMBER as usize);
     assert_eq!(obj.get_integer(0).unwrap().get().as_ref(), "0".as_bytes(),);
     assert_eq!(

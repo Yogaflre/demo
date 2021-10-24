@@ -7,13 +7,13 @@ use crate::common::{error::Error, utils};
 
 use super::strings::StringObject;
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ObjectValue {
     Null,
     Strings(Arc<StringObject>),
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Object {
     value: ObjectValue,
     active_time: i64,

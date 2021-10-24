@@ -7,7 +7,7 @@ const MB_SIZE: usize = 1024;
 /*
  * Simple Dynamic String
  */
-#[derive(Default, Debug, Eq, Clone, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, Eq, Serialize, Deserialize)]
 pub struct Sds {
     used: usize,
     free: usize,
