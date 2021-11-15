@@ -4,11 +4,12 @@ use std::cell::UnsafeCell;
  * 1.Not implement Sync trait, only one thread can hold reference of Cell
  * 2.value T implement Copy trait, no one can get reference out of Cell
  */
+#[derive(Debug)]
 pub struct Cell<T>
 where
     T: Copy, // not get reference out Cell
 {
-    value: UnsafeCell<T>, //TODO Can not use raw pointer instead of UnsafeCell. But reason is .. ?
+    value: UnsafeCell<T>, // TODO Can not use raw pointer instead of UnsafeCell. But reason is .. ?
 }
 
 impl<T> Cell<T>
