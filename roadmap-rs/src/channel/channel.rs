@@ -41,19 +41,27 @@ impl<T> Sender<T> {
 
 struct Receiver<T> {
     channel: Arc<Channel<T>>,
+    buffer: LinkedList<T>, // Changing space for time
 }
 
 impl<T> Receiver<T> {
     fn recv(&mut self) -> Option<T> {
-        let mut inner = self.channel.inner.lock().unwrap();
-        loop {
-            match inner.queue.pop_front() {
-                None if inner.senders == 0 => return None, // alse use Arc::strong_count(self.channel) == 1 to prove that no senders
-                None => {
-                    inner = self.channel.cond.wait(inner).unwrap();
-                }
-                t => return t,
-            };
+        if let Some(t) = self.buffer.pop_front() {
+            return Some(t);
+        } else {
+            let mut inner = self.channel.inner.lock().unwrap();
+            loop {
+                match inner.queue.pop_front() {
+                    None if inner.senders == 0 => return None, // alse use Arc::strong_count(self.channel) == 1 to prove that no senders
+                    None => {
+                        inner = self.channel.cond.wait(inner).unwrap();
+                    }
+                    t => {
+                        std::mem::swap(&mut inner.queue, &mut self.buffer); // TRICK receive all message at once! To avoid get lock every time
+                        return t;
+                    }
+                };
+            }
         }
     }
 
@@ -69,7 +77,7 @@ struct Channel<T> {
 
 struct Inner<T> {
     queue: LinkedList<T>,
-    senders: usize, // drop channel when senders is 0
+    senders: usize,
 }
 
 fn channel<T>() -> (Sender<T>, Receiver<T>) {
@@ -86,13 +94,17 @@ fn channel<T>() -> (Sender<T>, Receiver<T>) {
         Sender {
             channel: channel.clone(),
         },
-        Receiver { channel },
+        Receiver {
+            channel,
+            buffer: LinkedList::new(),
+        },
     );
 }
 
 #[cfg(test)]
 mod tests {
     use super::channel;
+    use std::thread;
 
     #[test]
     fn transfer() {
@@ -102,8 +114,21 @@ mod tests {
     }
 
     #[test]
-    fn last() {
+    fn closed() {
         let (_, mut rx) = channel::<()>();
+        assert_eq!(rx.recv(), None);
+    }
+
+    #[test]
+    fn multipal() {
+        let (mut tx, mut rx) = channel::<i32>();
+        let sub = thread::spawn(move || {
+            tx.send(1);
+            tx.send(2);
+        });
+        sub.join().unwrap();
+        assert_eq!(rx.recv().unwrap(), 1);
+        assert_eq!(rx.recv().unwrap(), 2);
         assert_eq!(rx.recv(), None);
     }
 }
