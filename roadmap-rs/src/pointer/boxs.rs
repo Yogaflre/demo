@@ -1,6 +1,7 @@
 use std::{
     marker::PhantomData,
     ops::{Deref, DerefMut},
+    ptr::NonNull,
 };
 
 /*
@@ -9,7 +10,11 @@ use std::{
  * If we impl Drop trait, the compiler will assume we access the "&mut T" in drop()
  */
 struct Boxs<T> {
-    p: *mut T,
+    /*
+     * Error3: If we use *mut T, The Boxs will be invariance
+     * FIX Error3: Use NonNull<T> instead of raw pointer
+     */
+    p: NonNull<T>,
     /*
      * FIX Error2
      * Tell the compiler that we own T even though "p" is a pointer of T. So compiler will check
@@ -21,11 +26,11 @@ struct Boxs<T> {
 /*
  * FIX Error1: "unsafe impl<#[may_dangle] T> Drop for Boxs<T> { ... }" (Unstable)
  *
- * Use "#[may_dangle]" to assure the compiler that we don't access the T in drop function.
+ * Use "#[may_dangle]" to assure the compiler that we don't access the T in drop(&mut self)
  */
 impl<T> Drop for Boxs<T> {
     fn drop(&mut self) {
-        unsafe { Box::from_raw(self.p) };
+        unsafe { Box::from_raw(self.p.as_ptr()) };
     }
 }
 
@@ -33,20 +38,20 @@ impl<T> Deref for Boxs<T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        unsafe { &*self.p }
+        unsafe { self.p.as_ref() }
     }
 }
 
 impl<T> DerefMut for Boxs<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe { &mut *self.p }
+        unsafe { self.p.as_mut() }
     }
 }
 
 impl<T> Boxs<T> {
     fn new(value: T) -> Self {
         Self {
-            p: Box::into_raw(Box::new(value)),
+            p: unsafe { NonNull::new_unchecked(Box::into_raw(Box::new(value))) },
             mark: PhantomData,
         }
     }
@@ -87,5 +92,13 @@ mod tests {
          * is a pointer of T) and drop T
          */
         // println!("{:?}", n);
+    }
+
+    #[test]
+    fn covariance() {
+        let s = String::from("hello");
+        let mut b1: Boxs<&'_ str> = Boxs::new(&*s);
+        let b2: Boxs<&'static str> = Boxs::new("hi"); // &'static: &'_
+        b1 = b2;
     }
 }
