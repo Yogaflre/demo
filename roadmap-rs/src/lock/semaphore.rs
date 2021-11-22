@@ -36,7 +36,7 @@ impl Semaphore {
 #[cfg(test)]
 mod tests {
     use crate::lock::semaphore::Semaphore;
-    use std::{cell::Cell, sync::Arc, thread};
+    use std::{sync::Arc, thread};
 
     #[test]
     fn thread_join() {

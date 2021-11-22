@@ -34,15 +34,12 @@ impl Lock for SpinLock {
     fn lock(&self) {
         while let Err(_) =
             self.flag
-                .compare_exchange(true, false, Ordering::SeqCst, Ordering::SeqCst)
+                .compare_exchange(true, false, Ordering::AcqRel, Ordering::Relaxed)
         {}
     }
 
     fn unlock(&self) {
-        while let Err(_) =
-            self.flag
-                .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-        {}
+        self.flag.store(false, Ordering::Release);
     }
 }
 

@@ -1,4 +1,5 @@
 mod channel;
+mod generic;
 mod iterator;
 mod lifetime;
 mod lock;

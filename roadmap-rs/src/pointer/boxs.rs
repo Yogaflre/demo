@@ -60,6 +60,7 @@ impl<T> Boxs<T> {
 #[cfg(test)]
 mod tests {
     use super::Boxs;
+    use std::{fmt::Debug, iter::Empty};
 
     #[test]
     fn bad1() {
@@ -74,7 +75,6 @@ mod tests {
         // println!("{:?}", n);
     }
 
-    use std::fmt::Debug;
     struct Demo<T: Debug>(T);
     impl<T: Debug> Drop for Demo<T> {
         fn drop(&mut self) {
@@ -100,5 +100,17 @@ mod tests {
         let mut b1: Boxs<&'_ str> = Boxs::new(&*s);
         let b2: Boxs<&'static str> = Boxs::new("hi"); // &'static: &'_
         b1 = b2;
+    }
+
+    #[test]
+    fn lifetime() {
+        let mut num: i32 = 123;
+        let mut iter: Empty<Demo<&'static mut i32>> = Empty::default();
+        {
+            let mut demo: Option<Demo<&'_ mut i32>> = Some(Demo(&mut num));
+            demo = iter.next(); // "&mut num" is droped here.
+        }
+        println!("{:?}", num);
+        let _ = iter.next();
     }
 }

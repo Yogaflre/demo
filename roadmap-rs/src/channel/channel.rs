@@ -57,7 +57,7 @@ impl<T> Receiver<T> {
                         inner = self.channel.cond.wait(inner).unwrap();
                     }
                     t => {
-                        std::mem::swap(&mut inner.queue, &mut self.buffer); // TRICK receive all message at once! To avoid get lock every time
+                        std::mem::swap(&mut inner.queue, &mut self.buffer); // NOTE receive all message at once! To avoid get lock every time
                         return t;
                     }
                 };
