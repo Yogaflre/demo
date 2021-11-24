@@ -3,15 +3,17 @@ use std::{
     ptr::NonNull,
 };
 
-/*
- * TODO Need more infomation from Trait.
- */
 struct VTable {
     type_id: TypeId, // specific type id
     drop: fn(*mut ()),
 }
 
-struct TraitObj {
+/*
+ * TODO We need more infomation from Trait.
+ * Generic must be Sized, but dyn Trait already is a Trait object. How do we get metadata from
+ * Trait?
+ */
+struct TraitObj /*<T> T is Trait?*/ {
     p: *mut (),
     vtable: VTable,
 }
@@ -29,6 +31,17 @@ impl TraitObj {
             },
         }
     }
+
+    fn cast_ref<T>(&self) -> Result<&T, ()>
+    where
+        T: Any,
+    {
+        if self.vtable.type_id == TypeId::of::<T>() {
+            return Ok(unsafe { &*(self.p as *mut T) });
+        } else {
+            return Err(());
+        }
+    }
 }
 
 impl Drop for TraitObj {
@@ -40,9 +53,6 @@ impl Drop for TraitObj {
 #[cfg(test)]
 mod tests {
     use super::TraitObj;
-    trait Hello {
-        fn hello();
-    }
 
     #[test]
     fn drop_test() {
@@ -51,5 +61,17 @@ mod tests {
         let obj = TraitObj::new(n);
         drop(obj);
         assert_ne!(unsafe { *p }, 123);
+    }
+
+    #[test]
+    fn cast() {
+        let s = TraitObj::new(String::from("hello"));
+        let s_ref = s.cast_ref::<String>().unwrap();
+        assert_eq!(s_ref.len(), 5);
+        let v = TraitObj::new(vec![1, 2, 3]);
+        let v_ref = v.cast_ref::<Vec<i32>>().unwrap();
+        assert_eq!(v_ref[1], 2);
+        let v_err = v.cast_ref::<&str>();
+        assert_eq!(v_err, Err(()));
     }
 }

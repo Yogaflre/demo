@@ -1,3 +1,4 @@
+mod async_wait;
 mod channel;
 mod function;
 mod iterator;
