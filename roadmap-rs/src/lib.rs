@@ -1,9 +1,9 @@
 mod async_wait;
 mod channel;
-mod ffi;
 mod function;
 mod iterator;
 mod lifetime;
 mod lock;
+mod macros;
 mod pointer;
 mod traits;
