@@ -2,54 +2,47 @@ use std::{
     future::Future,
     pin::Pin,
     sync::{Arc, Mutex},
-    task::{Poll, Waker},
-    thread,
-    time::Duration,
+    task::Poll,
 };
 
-struct StepAddFuture {
-    shared: Arc<Mutex<StepAddShared>>,
+use super::reactor::{Reactor, TaskState};
+
+#[derive(Clone)]
+pub struct Task {
+    id: usize,
+    data: u64,
+    reactor: Arc<Mutex<Reactor>>,
 }
 
-struct StepAddShared {
-    target: usize,
-    add: usize,
-    waker: Option<Waker>,
-}
-
-impl Future for StepAddFuture {
+impl Future for Task {
     type Output = usize;
 
     fn poll(self: Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> Poll<Self::Output> {
-        let mut shared = self.shared.lock().unwrap();
-        if shared.add == 0 {
-            println!("Ready!");
-            return Poll::Ready(shared.target);
+        let mut reactor = self.reactor.lock().unwrap();
+
+        if reactor.is_ready(self.id) {
+            reactor
+                .tasks
+                .get_mut(&self.id)
+                .map(|state| *state = TaskState::Finished)
+                .unwrap();
+            return Poll::Ready(self.id);
+        } else if reactor.tasks.contains_key(&self.id) {
+            // FIXME Why the same id will be polled twice?
+            reactor
+                .tasks
+                .insert(self.id, TaskState::NotReady(cx.waker().clone()))
+                .unwrap();
+            return Poll::Pending;
         } else {
-            shared.waker = Some(cx.waker().clone());
-            println!("Pending...");
+            reactor.register(self.id, self.data, cx.waker().clone());
             return Poll::Pending;
         }
     }
 }
 
-impl StepAddFuture {
-    fn new(target: usize, add: usize) -> Self {
-        let shared = Arc::new(Mutex::new(StepAddShared {
-            target,
-            add,
-            waker: None,
-        }));
-        let shared_clone = shared.clone();
-        thread::spawn(move || {
-            thread::sleep(Duration::from_secs(3));
-            let mut shared_locked = shared_clone.lock().unwrap();
-            shared_locked.target += shared_locked.add;
-            shared_locked.add = 0;
-            if let Some(waker) = &shared_locked.waker {
-                waker.wake_by_ref();
-            }
-        });
-        return StepAddFuture { shared };
+impl Task {
+    pub fn new(id: usize, data: u64, reactor: Arc<Mutex<Reactor>>) -> Self {
+        Self { id, data, reactor }
     }
 }
