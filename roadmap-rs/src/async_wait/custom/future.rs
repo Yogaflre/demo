@@ -28,7 +28,6 @@ impl Future for Task {
                 .unwrap();
             return Poll::Ready(self.id);
         } else if reactor.tasks.contains_key(&self.id) {
-            // FIXME Why the same id will be polled twice?
             reactor
                 .tasks
                 .insert(self.id, TaskState::NotReady(cx.waker().clone()))

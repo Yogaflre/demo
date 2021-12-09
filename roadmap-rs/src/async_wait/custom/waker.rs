@@ -26,17 +26,16 @@ impl MyWaker {
 
 fn my_wake(waker: &MyWaker) {
     let waker_arc = unsafe { Arc::from_raw(waker) };
-    mem::forget(waker_arc.clone()); // increase ref count
     waker_arc.t.unpark();
 }
 
 fn my_wake_ref(waker: &MyWaker) {
-    let waker_arc = unsafe { Arc::from_raw(waker) };
-    waker_arc.t.unpark();
+    unsafe { (*(waker as *const MyWaker)).t.unpark() };
 }
 
 fn my_clone(waker: &MyWaker) -> RawWaker {
     let waker_arc = unsafe { Arc::from_raw(waker) };
+    mem::forget(waker_arc.clone());
     return RawWaker::new(Arc::into_raw(waker_arc) as *const (), &VTABLE);
 }
 

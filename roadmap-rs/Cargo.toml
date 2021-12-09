@@ -7,3 +7,6 @@ edition = "2021"
 
 [dependencies]
 tokio = { version = "1", features = ["full"] }
+async-task = "4"
+futures-lite = "1"
+crossbeam = "0.8"
