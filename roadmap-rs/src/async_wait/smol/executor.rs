@@ -10,11 +10,15 @@ struct Executor {
 impl Executor {
     fn new() -> Self {
         let (tx, rx): (Sender<Runnable>, Receiver<Runnable>) = crossbeam::channel::unbounded();
-        thread::spawn(move || {
-            for runnable in rx.iter() {
-                runnable.run();
-            }
-        });
+        // multipal work queue for task needs to poll()
+        for _ in 0..5 {
+            let rx_c = rx.clone();
+            thread::spawn(move || {
+                for runnable in rx_c.iter() {
+                    runnable.run();
+                }
+            });
+        }
         Self {
             queue: Arc::new(tx),
         }
